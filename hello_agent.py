@@ -10,6 +10,10 @@ client = OpenAI(
     base_url="https://api.deepseek.com",
 )
 
+# 保留永久记忆文件
+CURRENT_DIR = os.path.dirname(__file__)
+MEMORY_FILE = os.path.join(CURRENT_DIR, "memory.json")
+
 
 def get_current_time():
     """获取电脑当前时间"""
@@ -42,6 +46,39 @@ def calculate(operation, a, b):
     return f"错误：不支持操作{operation}"
 
 
+def load_memory():
+    """
+    读取永久记忆
+    :return:
+    """
+    if not os.path.exists(MEMORY_FILE):
+        return {}
+
+    with open(MEMORY_FILE, "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def save_memory(key, value):
+    """
+    保存记忆
+    :param key:
+    :param value:
+    :return:
+    """
+    memory = load_memory()
+    memory[key] = value
+    with open(MEMORY_FILE, "w", encoding="utf-8") as file:
+        json.dump(memory, file, ensure_ascii=False, indent=2)
+    return f"已经记住：{key} = {value}"
+
+
+def read_memory():
+    """读取全部长期记忆。"""
+
+    # 返回 Python 字典
+    return load_memory()
+
+
 def execute_tool(function_name, arguments):
     """
     根据工具名称执行相应的 Python 函数。
@@ -59,6 +96,15 @@ def execute_tool(function_name, arguments):
             a=arguments["a"],
             b=arguments["b"]
         )
+
+    if function_name == "save_memory":
+        return save_memory(
+            key=arguments["key"],
+            value=arguments["value"]
+        )
+
+    if function_name == "read_memory":
+        return read_memory()
 
     return f"错误：找不到工具{function_name}"
 
@@ -103,8 +149,41 @@ tools = [
                         "description": "参与计算的第二数字"
                     }
                 },
-            },
-            "required": ["operation", "a", "b"]
+                "required": ["operation", "a", "b"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_memory",
+            "description": "当用户要求记住某件信息时，将信息保存到长期记忆。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "记忆的名称，例如：姓名、爱好。"
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "需要保存的具体内容。"
+                    }
+                },
+                "required": ["key", "value"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_memory",
+            "description": "读取以前保存的长期记忆",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
         }
     }
 ]
@@ -115,6 +194,9 @@ messages = [
         "content": (
             "你是一位智能助手。"
             "涉及当前日期、时间或数学计算时必须调用工具，不能猜测。"
+            "用户明确要求记住信息时，必须调用 save_memory。"
+            "用户询问以前保存的信息时，必须调用 read_memory。"
+            "不能假装已经保存或读取了信息。"
         )
     }
 ]
