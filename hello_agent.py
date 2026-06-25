@@ -16,7 +16,7 @@ CURRENT_DIR = os.path.dirname(__file__)
 MEMORY_FILE = os.path.join(CURRENT_DIR, "memory.json")
 
 # 知识库文件路径
-KNOWLEDGE_FILE = os.path.join(CURRENT_DIR, "knowledge.txt")
+KNOWLEDGE_DIR = os.path.join(CURRENT_DIR, "knowledge")
 
 # 每次用户提问，Agent 最多行动 5 次
 MAX_AGENT_STEPS = 5
@@ -104,22 +104,98 @@ def search_knowledge(query):
     :param query: 用户问题里的关键词
     :return: 搜索到的知识库内容
     """
-    if not os.path.exists(KNOWLEDGE_FILE):
-        return "知识库文件 knowledge.txt 不存在。"
+    if not os.path.exists(KNOWLEDGE_DIR):
+        return "知识库文件目录knowledge不存在。"
 
-    with open(KNOWLEDGE_FILE, "r", encoding="utf-8") as file:
-        lines = file.readlines()
+    query_lower = query.lower()
 
-    result = []
+    keywords = []
 
-    for line in lines:
-        if query.lower() in line.lower():
-            result.append(line.strip())
+    stop_words = ["我的", "有哪些", "是什么", "是啥", "请问", "一下", "帮我", "查询", "搜索"]
 
-    if not result:
+    for word in query_lower.split():
+        word = word.strip()
+        if not word:
+            continue
+
+        if word in stop_words:
+            continue
+
+        keywords.append(word)
+
+    # 如果用户输入的是中文，很多时候没有空格；
+    # 所以这里额外把整句里常见的重要词手动识别出来
+    important_words = ["agent", "项目", "方向", "学习", "目标", "deepseek", "python", "知识库", "助手", "日报", "周报", "研究"]
+    for word in important_words:
+        if word in query_lower and word not in keywords:
+            keywords.append(word)
+
+    if not keywords:
+        keywords = [query_lower]
+
+    # scored_results 用来保存：每一行命中了多少关键词
+    scored_results = []
+
+    for filename in os.listdir(KNOWLEDGE_DIR):
+        if not filename.endswith(".txt"):
+            continue
+
+        file_path = os.path.join(KNOWLEDGE_DIR, filename)
+        if not os.path.isfile(file_path):
+            continue
+
+        with open(file_path, "r", encoding="utf-8") as file:
+            content = file.read()
+
+        paragraphs = content.split("\n\n")
+
+        for paragraph_index, paragraph in enumerate(paragraphs, start=1):
+            paragraph_text = paragraph.strip()
+
+            if not paragraph_text:
+                continue
+
+            paragraph_lines = paragraph.splitlines()
+            title = paragraph_lines[0].strip()
+            body = "".join(paragraph_lines[1:]).strip()
+            if not body:
+                body = title
+
+            paragraph_lower = paragraph_text.lower()
+
+            score = 0
+            for keyword in keywords:
+                if keyword in paragraph_lower:
+                    score += 1
+
+            # 命中至少 1 个关键词，就保存
+            if score > 0:
+                scored_results.append(
+                    {
+                        "score": score,
+                        "filename": filename,
+                        "paragraph_index": paragraph_index,
+                        "title": title,
+                        "body": body
+                    }
+                )
+
+    if not scored_results:
         return "没有在知识库中找到相关内容。"
 
-    return "\n".join(result[:5])
+    scored_results.sort(key=lambda x: x["score"], reverse=True)
+    top_results = scored_results[:5]
+
+    # 把文件名、行号、正文都返回，方便知道来源
+    result_texts = []
+
+    for item in top_results:
+        result_texts.append(
+            f"[{item['filename']} 第{item['paragraph_index']}段 | 标题：{item['title']}]\n "
+            f"{item['body']}"
+        )
+
+    return "\n\n".join(result_texts)
 
 
 def execute_tool(function_name, arguments):

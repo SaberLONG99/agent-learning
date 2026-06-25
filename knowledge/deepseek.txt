@@ -1,0 +1,3 @@
+DeepSeek API 可以使用 OpenAI 兼容格式调用。
+使用 Python 开发时，可以通过 openai 这个 SDK 连接 DeepSeek。
+DeepSeek 的 base_url 是 https://api.deepseek.com。
