@@ -1,6 +1,7 @@
 ﻿import json
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from openai import OpenAI
 
@@ -14,15 +15,32 @@ client = OpenAI(
 CURRENT_DIR = os.path.dirname(__file__)
 MEMORY_FILE = os.path.join(CURRENT_DIR, "memory.json")
 
+# 知识库文件路径
+KNOWLEDGE_FILE = os.path.join(CURRENT_DIR, "knowledge.txt")
+
+# 每次用户提问，Agent 最多行动 5 次
+MAX_AGENT_STEPS = 5
+
 
 def get_current_time():
     """获取电脑当前时间"""
     return datetime.now().strftime("%Y年%m月%d日 %H:%M:%S")
 
 
+def get_time_by_timezone(timezone):
+    """
+    根据当前时区获取当前时间
+
+    :param timezone: 时区名称，例如 Asia/Shanghai 表示中国时间
+    :return: 指定时区的当前时间字符串
+    """
+    now = datetime.now(ZoneInfo(timezone))
+    return now.strftime("%Y年%m月%d日 %H:%M:%S")
+
+
 def calculate(operation, a, b):
     """
-    对啊，b进行计算
+    对a，b进行计算
     :param operation: 计算方式
     :param a: 数字a
     :param b: 数字b
@@ -79,6 +97,31 @@ def read_memory():
     return load_memory()
 
 
+def search_knowledge(query):
+    """
+    从本地知识库文件knowledge.txt中查询相关内容
+
+    :param query: 用户问题里的关键词
+    :return: 搜索到的知识库内容
+    """
+    if not os.path.exists(KNOWLEDGE_FILE):
+        return "知识库文件 knowledge.txt 不存在。"
+
+    with open(KNOWLEDGE_FILE, "r", encoding="utf-8") as file:
+        lines = file.readlines()
+
+    result = []
+
+    for line in lines:
+        if query.lower() in line.lower():
+            result.append(line.strip())
+
+    if not result:
+        return "没有在知识库中找到相关内容。"
+
+    return "\n".join(result[:5])
+
+
 def execute_tool(function_name, arguments):
     """
     根据工具名称执行相应的 Python 函数。
@@ -90,6 +133,11 @@ def execute_tool(function_name, arguments):
     if function_name == "get_current_time":
         return get_current_time()
 
+    if function_name == "get_time_by_timezone":
+        return get_time_by_timezone(
+            timezone=arguments["timezone"]
+        )
+
     if function_name == "calculate":
         return calculate(
             operation=arguments["operation"],
@@ -98,13 +146,22 @@ def execute_tool(function_name, arguments):
         )
 
     if function_name == "save_memory":
-        return save_memory(
-            key=arguments["key"],
-            value=arguments["value"]
-        )
+        print(f"\nAgent 想保存记忆："
+              f"{arguments['key']} = {arguments['value']}")
+        confirmation = input("是否允许？（y/n）：").strip().lower()
+        if confirmation == 'y':
+            return save_memory(
+                key=arguments["key"],
+                value=arguments["value"]
+            )
+        # 告诉模型操作被用户拒绝
+        return "用户拒绝保存这条记忆"
 
     if function_name == "read_memory":
         return read_memory()
+
+    if function_name == "search_knowledge":
+        return search_knowledge(query=arguments["query"])
 
     return f"错误：找不到工具{function_name}"
 
@@ -185,6 +242,49 @@ tools = [
                 "required": []
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_time_by_timezone",
+            "description": "获取指定时区的当前时间。北京、上海、中国时间都使用 Asia/Shanghai。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "timezone": {
+                        "type": "string",
+                        "enum": [
+                            "Asia/Shanghai",
+                            "Asia/Tokyo",
+                            "Europe/London",
+                            "America/New_York"
+                        ],
+                        "description": "IANA 时区名称。北京/上海/中国时间使用 Asia/Shanghai。"
+                    }
+                },
+                "required": ["timezone"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge",
+            "description": "从本地知识库knowledge.txt中检索与用户问题相关的信息。",
+            "parameters": {
+                "type": "object",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "用于检索知识库的关键词，例如：学习目标、项目方向、DeepSeek"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        }
     }
 ]
 
@@ -194,8 +294,11 @@ messages = [
         "content": (
             "你是一位智能助手。"
             "涉及当前日期、时间或数学计算时必须调用工具，不能猜测。"
+            "如果用户询问某个城市或地区的当前时间，必须调用 get_time_by_timezone。"
+            "北京、上海、中国时间对应 Asia/Shanghai。"
             "用户明确要求记住信息时，必须调用 save_memory。"
             "用户询问以前保存的信息时，必须调用 read_memory。"
+            "当用户询问本地资料、知识库、项目方向、学习目标等信息时，必须调用 search_knowledge。"
             "不能假装已经保存或读取了信息。"
         )
     }
@@ -218,12 +321,20 @@ while True:
         }
     )
 
-    while True:
-        response = client.chat.completions.create(
-            model="deepseek-chat",
-            messages=messages,
-            tools=tools
-        )
+    step_count = 0
+    while step_count < MAX_AGENT_STEPS:
+        step_count += 1
+        print(f"\n[Agent 步骤 {step_count}/{MAX_AGENT_STEPS}]")
+
+        try:
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=messages,
+                tools=tools
+            )
+        except Exception as e:
+            print(f"\nAPI 请求失败：{e}")
+            break
 
         assistant_message = response.choices[0].message
         messages.append(assistant_message)

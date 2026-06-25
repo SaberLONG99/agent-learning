@@ -1,0 +1,4 @@
+小明的学习目标：三个月内掌握 Agent 开发。
+小明正在使用 Python 和 DeepSeek 学习智能体开发。
+小明的 Agent 项目方向：研究助手、自动日报助手、个人知识库助手。
+DeepSeek API 可以使用 OpenAI 兼容格式调用。
