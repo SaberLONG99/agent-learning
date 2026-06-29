@@ -121,5 +121,25 @@ tools = [
                 "required": ["query"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "make_todo_list",
+            "description": "把用户给出的多个任务整理成编号待办清单。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tasks": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "任务列表，例如：['学习 Agent', '写日报', '复习 Python']"
+                    }
+                },
+                "required": ["tasks"]
+            }
+        }
     }
 ]

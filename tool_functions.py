@@ -55,6 +55,23 @@ def calculate(operation, a, b):
     return f"错误：不支持操作 {operation}"
 
 
+def make_todo_list(tasks: list):
+    """
+    生成任务清单
+
+    :param tasks: 任务列表，例如 ["学习 Agent", "写日报"]
+    :return:
+    """
+    if not tasks:
+        return "没有收到任务"
+
+    todo_list = []
+
+    for index, task in enumerate(tasks, start=1):
+        todo_list.append(f"{index}. {task}")
+    return "待办清单：\n" + "\n".join(todo_list)
+
+
 def execute_tool(function_name, arguments):
     """
     根据模型请求的工具名称，执行对应的 Python 函数。
@@ -102,5 +119,8 @@ def execute_tool(function_name, arguments):
         return search_knowledge(
             query=arguments["query"]
         )
+
+    if function_name == "make_todo_list":
+        return make_todo_list(tasks=arguments["tasks"])
 
     return f"错误：找不到工具 {function_name}"
