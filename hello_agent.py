@@ -191,8 +191,9 @@ def search_knowledge(query):
 
     for item in top_results:
         result_texts.append(
-            f"[{item['filename']} 第{item['paragraph_index']}段 | 标题：{item['title']}]\n "
-            f"{item['body']}"
+            f"来源：{item['filename']} 第{item['paragraph_index']}段\n"
+            f"标题：{item['title']}\n"
+            f"内容：{item['body']}"
         )
 
     return "\n\n".join(result_texts)
@@ -346,19 +347,16 @@ tools = [
         "type": "function",
         "function": {
             "name": "search_knowledge",
-            "description": "从本地知识库knowledge.txt中检索与用户问题相关的信息。",
+            "description": "从本地 knowledge 知识库中检索与用户问题相关的信息。如果返回没有找到相关内容，助手必须停止回答，不能自行补充。",
             "parameters": {
                 "type": "object",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "用于检索知识库的关键词，例如：学习目标、项目方向、DeepSeek"
-                        }
-                    },
-                    "required": ["query"]
-                }
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "用于检索知识库的关键词，例如：学习目标、项目方向、DeepSeek"
+                    }
+                },
+                "required": ["query"]
             }
         }
     }
@@ -375,6 +373,13 @@ messages = [
             "用户明确要求记住信息时，必须调用 save_memory。"
             "用户询问以前保存的信息时，必须调用 read_memory。"
             "当用户询问本地资料、知识库、项目方向、学习目标等信息时，必须调用 search_knowledge。"
+            "回答知识库相关问题时，必须基于 search_knowledge 的工具结果回答。"
+            "回答末尾必须写明来源，例如：来源：project_ideas.txt 第2段。"
+            "如果 search_knowledge 第一次没有找到内容，你可以换一个更短、更核心的关键词再搜索一次。"
+            "如果第二次仍然没有找到，必须停止并告诉用户知识库中没有相关资料。"
+            "这种情况下禁止补充自己的常识、禁止介绍其他能力、禁止推荐其他内容。"
+            "除非用户明确说'不用知识库'或'根据常识回答'，否则不能脱离知识库回答。"
+            "知识库问答要保持可追溯，不能编造来源。"
             "不能假装已经保存或读取了信息。"
         )
     }
@@ -398,6 +403,7 @@ while True:
     )
 
     step_count = 0
+    knowledge_miss_count = 0
     while step_count < MAX_AGENT_STEPS:
         step_count += 1
         print(f"\n[Agent 步骤 {step_count}/{MAX_AGENT_STEPS}]")
@@ -415,6 +421,7 @@ while True:
         assistant_message = response.choices[0].message
         messages.append(assistant_message)
 
+        should_stop = False
         if not assistant_message.tool_calls:
             print(f"\n助手：{assistant_message.content}")
             break
@@ -433,6 +440,35 @@ while True:
             tool_result = str(tool_result)
             print(f"[工具结果] {tool_result}")
 
+            if function_name == "search_knowledge" and "没有在知识库中找到相关内容" in tool_result:
+                knowledge_miss_count += 1
+
+                if knowledge_miss_count < 2:
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": (
+                                "没有在知识库中找到相关内容。"
+                                "请换一个更短、更核心的关键词重新调用 search_knowledge。"
+                            )
+                        }
+                    )
+                    continue
+
+                # 第二次没找到，也必须先补上 tool 消息
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": "没有在知识库中找到相关内容。"
+                    }
+                )
+
+                print("\n助手：知识库中没有找到相关资料。")
+                should_stop = True
+                break
+
             messages.append(
                 {
                     "role": "tool",
@@ -440,3 +476,6 @@ while True:
                     "content": tool_result
                 }
             )
+
+        if should_stop:
+            break
