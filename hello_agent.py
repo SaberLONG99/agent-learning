@@ -18,6 +18,9 @@ MEMORY_FILE = os.path.join(CURRENT_DIR, "memory.json")
 # 知识库文件路径
 KNOWLEDGE_DIR = os.path.join(CURRENT_DIR, "knowledge")
 
+# Agent日志文件
+LOG_FILE = os.path.join(CURRENT_DIR, "agent.log")
+
 # 每次用户提问，Agent 最多行动 5 次
 MAX_AGENT_STEPS = 5
 
@@ -95,6 +98,19 @@ def read_memory():
 
     # 返回 Python 字典
     return load_memory()
+
+
+def write_log(message):
+    """
+    写日志
+
+    :param message:
+    :return:
+    """
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with open(LOG_FILE, "a", encoding="utf-8") as file:
+        file.write(f"[{now}] {message}\n")
 
 
 def search_knowledge(query):
@@ -402,6 +418,8 @@ while True:
         }
     )
 
+    write_log(f"用户输入：{user_input}")
+
     step_count = 0
     knowledge_miss_count = 0
     while step_count < MAX_AGENT_STEPS:
@@ -424,6 +442,7 @@ while True:
         should_stop = False
         if not assistant_message.tool_calls:
             print(f"\n助手：{assistant_message.content}")
+            write_log(f"助手回答：{assistant_message.content}")
             break
 
         for tool_call in assistant_message.tool_calls:
@@ -431,14 +450,16 @@ while True:
             arguments = json.loads(tool_call.function.arguments or "{}")
 
             print(f"\n[调用工具] {function_name}, 参数：{arguments}")
+            write_log(f"[调用工具] {function_name}, 参数：{arguments}")
 
             try:
                 tool_result = execute_tool(function_name, arguments)
             except Exception as e:
                 tool_result = f"工具执行失败：{e}"
+                write_log(f"[工具执行失败] {function_name}：{e}")
 
             tool_result = str(tool_result)
-            print(f"[工具结果] {tool_result}")
+            write_log(f"[工具结果] {tool_result}")
 
             if function_name == "search_knowledge" and "没有在知识库中找到相关内容" in tool_result:
                 knowledge_miss_count += 1
@@ -466,6 +487,7 @@ while True:
                 )
 
                 print("\n助手：知识库中没有找到相关资料。")
+                write_log("助手回答：知识库中没有找到相关资料")
                 should_stop = True
                 break
 
